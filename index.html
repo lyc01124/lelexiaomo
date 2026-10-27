@@ -56,9 +56,6 @@
     font-size:13px;
     opacity:0.9;
   }
-  .panel-group input[type="range"]{
-    width:100%;
-  }
   .value-text{
     font-size:12px;
     opacity:0.7;
@@ -109,6 +106,7 @@
   #enter-btn.hidden {
     opacity: 0;
     transform: translate(-50%, -24px);
+    pointer-events: none;
   }
 
   .main-page {
@@ -240,13 +238,16 @@
   .btn-base.hidden {
     opacity: 0;
     transform: translateX(-50%) translateY(12px);
+    pointer-events:none;
   }
   .btn-base.download-init{
     opacity:0;
     transform: translateX(-50%) translateY(12px);
+    pointer-events:none;
   }
   .btn-base.show {
     opacity:1;
+    pointer-events:auto;
   }
 
   #save-btn {
@@ -292,7 +293,7 @@
 </head>
 <body>
 
-<audio id="bgAudio" src="1.mp3" preload="auto">
+<audio id="bgAudio" src="1.mp3" preload="auto" loop>
 
 <button id="toggle-panel-btn">打开面板</button>
 <div id="side-panel">
@@ -556,7 +557,6 @@ function setup() {
     state = 1;
     document.getElementById('enter-btn').classList.add('hidden');
     document.getElementById('mainPage').classList.add('on');
-    // 点击进入主页播放音频
     bgAudio.play().catch(err=>{
       console.log("音频播放失败：", err);
     });
