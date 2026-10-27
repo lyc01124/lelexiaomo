@@ -33,7 +33,7 @@
     top: 0;
     left: 0;
     height: 100%;
-    width: 280px;
+    width: 320px;
     background: rgba(20,20,20,0.85);
     backdrop-filter: blur(12px);
     z-index: 99;
@@ -292,6 +292,8 @@
 </head>
 <body>
 
+<audio id="bgAudio" src="1.mp3" preload="auto">
+
 <button id="toggle-panel-btn">打开面板</button>
 <div id="side-panel">
   <div class="panel-group">
@@ -309,6 +311,21 @@
 
     <label>光晕强度 <span class="value-text" id="glowVal">3.0</span></label>
     <input type="range" id="glowSlider" min="0" max="8" value="3" step="0.1">
+
+    <label>轨迹长度 <span class="value-text" id="trailLenVal">40</span></label>
+    <input type="range" id="trailLengthSlider" min="5" max="120" value="40" step="1">
+
+    <label>运动模式</label>
+    <select id="motionModeSelect" style="width:100%;padding:4px;border-radius:4px;">
+      <option value="static">静止（仅拖拽）</option>
+      <option value="orbitNear">环绕附近粒子</option>
+    </select>
+
+    <label>环绕半径 <span class="value-text" id="orbitRadiusVal">80</span></label>
+    <input type="range" id="orbitRadiusSlider" min="20" max="200" value="80" step="1">
+
+    <label>环绕速度 <span class="value-text" id="orbitSpeedVal">0.8</span></label>
+    <input type="range" id="orbitSpeedSlider" min="0.1" max="3" value="0.8" step="0.1">
 
     <div class="btn-row">
       <button class="panel-btn" id="undoParticleBtn">撤回上一个</button>
@@ -367,15 +384,28 @@ let placedParticles = [];
 let particleSize = 6;
 let glowStrength = 3.0;
 let enableParticle = true;
+let trailMaxLength = 40;
+let motionMode = "static";
+let orbitRadiusSetting = 80;
+let orbitSpeedSetting = 0.8;
 
 let draggingIndex = -1;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
+const bgAudio = document.getElementById('bgAudio');
+
 const sizeSlider = document.getElementById('particleSizeSlider');
 const glowSlider = document.getElementById('glowSlider');
+const trailLengthSlider = document.getElementById('trailLengthSlider');
 const sizeValText = document.getElementById('sizeVal');
 const glowValText = document.getElementById('glowVal');
+const trailLenValText = document.getElementById('trailLenVal');
+const orbitRadiusSlider = document.getElementById('orbitRadiusSlider');
+const orbitRadiusValText = document.getElementById('orbitRadiusVal');
+const orbitSpeedSlider = document.getElementById('orbitSpeedSlider');
+const orbitSpeedValText = document.getElementById('orbitSpeedVal');
+const motionModeSelect = document.getElementById('motionModeSelect');
 const clearBtn = document.getElementById('clearParticles');
 const undoBtn = document.getElementById('undoParticleBtn');
 const switchEl = document.getElementById('enableParticleSwitch');
@@ -410,6 +440,21 @@ glowSlider.oninput = ()=>{
   glowStrength = parseFloat(glowSlider.value);
   glowValText.innerText = glowStrength.toFixed(1);
 }
+trailLengthSlider.oninput = ()=>{
+  trailMaxLength = parseInt(trailLengthSlider.value);
+  trailLenValText.innerText = trailMaxLength;
+}
+orbitRadiusSlider.oninput = ()=>{
+  orbitRadiusSetting = parseInt(orbitRadiusSlider.value);
+  orbitRadiusValText.innerText = orbitRadiusSetting;
+}
+orbitSpeedSlider.oninput = ()=>{
+  orbitSpeedSetting = parseFloat(orbitSpeedSlider.value);
+  orbitSpeedValText.innerText = orbitSpeedSetting.toFixed(1);
+}
+motionModeSelect.onchange = ()=>{
+  motionMode = motionModeSelect.value;
+}
 
 const togglePanelBtn = document.getElementById('toggle-panel-btn');
 const sidePanel = document.getElementById('side-panel');
@@ -423,7 +468,8 @@ document.addEventListener('mousemove', (e)=>{
 })
 
 [
-  togglePanelBtn, sidePanel, undoBtn, clearBtn, sizeSlider, glowSlider, switchEl,
+  togglePanelBtn, sidePanel, undoBtn, clearBtn, sizeSlider, glowSlider, trailLengthSlider,
+  orbitRadiusSlider, orbitSpeedSlider, motionModeSelect, switchEl,
   document.getElementById('enter-btn'),
   document.getElementById('control-panel'), document.getElementById('color-picker'),
   document.getElementById('size-input'), document.getElementById('bold-btn'),
@@ -510,6 +556,10 @@ function setup() {
     state = 1;
     document.getElementById('enter-btn').classList.add('hidden');
     document.getElementById('mainPage').classList.add('on');
+    // 点击进入主页播放音频
+    bgAudio.play().catch(err=>{
+      console.log("音频播放失败：", err);
+    });
   });
 
   const saveBtn = document.getElementById('save-btn');
@@ -592,11 +642,11 @@ function mousePressed(){
   draggingIndex = -1;
   for(let i = placedParticles.length - 1; i >= 0; i--){
     let p = placedParticles[i];
-    let d = dist(mouseX, mouseY, p.mx, p.my);
+    let d = dist(mouseX, mouseY, p.baseX, p.baseY);
     if(d < particleSize * 1.5){
       draggingIndex = i;
-      dragOffsetX = p.mx - mouseX;
-      dragOffsetY = p.my - mouseY;
+      dragOffsetX = p.baseX - mouseX;
+      dragOffsetY = p.baseY - mouseY;
       break;
     }
   }
@@ -604,8 +654,8 @@ function mousePressed(){
 
 function mouseDragged(){
   if(draggingIndex >= 0){
-    placedParticles[draggingIndex].mx = mouseX + dragOffsetX;
-    placedParticles[draggingIndex].my = mouseY + dragOffsetY;
+    placedParticles[draggingIndex].baseX = mouseX + dragOffsetX;
+    placedParticles[draggingIndex].baseY = mouseY + dragOffsetY;
   }
 }
 
@@ -614,8 +664,12 @@ function mouseClicked() {
   if (!enableParticle) return;
 
   placedParticles.push({
+    baseX: mouseX - 668,
+    baseY: mouseY - 436,
     mx: mouseX - 668,
-    my: mouseY - 436
+    my: mouseY - 436,
+    angle: random(TWO_PI),
+    trail: []
   });
   updateCount();
 }
@@ -628,8 +682,25 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 }
 
+function findNearestParticle(idx){
+  const self = placedParticles[idx];
+  let minDist = Infinity;
+  let target = null;
+  for(let i=0;i<placedParticles.length;i++){
+    if(i === idx) continue;
+    const other = placedParticles[i];
+    const d = dist(self.baseX, self.baseY, other.baseX, other.baseY);
+    if(d < minDist){
+      minDist = d;
+      target = other;
+    }
+  }
+  return target;
+}
+
 function draw() {
   background(0);
+  const time = millis() / 1000;
 
   if (draggingIndex < 0) {
     targetRotY = map(mouseXDoc, 0, width, -0.5, 0.5);
@@ -653,7 +724,36 @@ function draw() {
   noStroke();
   for (let i = 0; i < placedParticles.length; i++) {
     let p = placedParticles[i];
+
+    if(motionMode === "orbitNear"){
+      const near = findNearestParticle(i);
+      if(near){
+        p.angle += orbitSpeedSetting * 0.02;
+        p.mx = near.baseX + cos(p.angle) * orbitRadiusSetting;
+        p.my = near.baseY + sin(p.angle) * orbitRadiusSetting;
+      }else{
+        p.mx = p.baseX;
+        p.my = p.baseY;
+      }
+    }else{
+      p.mx = p.baseX;
+      p.my = p.baseY;
+    }
+
+    p.trail.push({x:p.mx, y:p.my});
+    if(p.trail.length > trailMaxLength){
+      p.trail.shift();
+    }
+
     let baseColor = (i === draggingIndex) ? color(255, 255, 100) : color(255);
+
+    for(let t=0;t<p.trail.length;t++){
+      const pt = p.trail[t];
+      const alpha = map(t,0,p.trail.length,10,120);
+      const rSize = map(t,0,p.trail.length,particleSize*0.15,particleSize*0.4);
+      fill(red(baseColor),green(baseColor),blue(baseColor),alpha);
+      circle(pt.x,pt.y,rSize);
+    }
 
     for (let j = 4; j >= 1; j--) {
       let r = particleSize * j * glowStrength;
