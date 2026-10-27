@@ -415,21 +415,19 @@
 <script src="liquid-glass.js"></script>
 
 <script>
-/* ============================================================
-   Rift — p5.js
-   a dark cloth; a swipe tears it open onto warm cream paper,
-   grass sprouts in the opening, fills it, then spreads until it carpets the whole screen,
-   small flowers bloom in it, and yellow butterflies come out of the crack
+  /* ============================================================
+   Rift — p5.js 季节版
+   1=春 2=夏 3=秋 4=冬 切换季节
    ============================================================ */
 let scene, world, velvet, dark, spill, W, H, PAD;
-const SPILL = 4;   // light spill and dapples are worked out at quarter resolution, which also softens them
+const SPILL = 4;
 const cracks = [], flies = [], pending = [];
 let cur = null, healT = 0, pressT = 0, spillLevel = 0;
+let season = 3;
 const R = Math.random, rr = (a, b) => a + R() * (b - a);
 const gauss = () => (R() + R() + R() + R() - 2) * .8;
 const now = () => millis() / 1000;
 const smooth = q => (q = Math.min(1, Math.max(0, q)), q * q * (3 - 2 * q));
-
 function setup() {
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   createCanvas(windowWidth, windowHeight);
@@ -447,46 +445,47 @@ function build() {
   spill = q();
   buildMeadow();
 }
-
 /* ============================================================
-   the world behind: warm cream paper, softly mottled, with a faint tooth
+   the world behind: 季节适配底色纸张
    ============================================================ */
 function paintScene(g) {
   const w = g.width, h = g.height, ctx = g.drawingContext, k = 4, sw = Math.ceil(w / k), sh = Math.ceil(h / k);
   const c = document.createElement('canvas'); c.width = sw; c.height = sh;
   const cx = c.getContext('2d'), img = cx.createImageData(sw, sh), d = img.data;
+
+  let baseR, baseG, baseB;
+  if (season === 0) { baseR = 250; baseG = 242; baseB = 238; }
+  else if (season === 1) { baseR = 244; baseG = 237; baseB = 221; }
+  else if (season === 2) { baseR = 242; baseG = 230; baseB = 210; }
+  else { baseR = 245; baseG = 246; baseB = 248; }
+
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     const X = x * k, Y = y * k, i = (y * sw + x) * 4;
     const t = (noise(X * .003 + 70, Y * .003) * .7 + noise(X * .011 + 90, Y * .011) * .3 - .5) * 2, lift = .5 - y / sh;
-    d[i] = 244 + t * 6 + lift * 6; d[i + 1] = 237 + t * 7 + lift * 6; d[i + 2] = 221 + t * 9 + lift * 8; d[i + 3] = 255;
+    d[i] = baseR + t * 6 + lift * 6; d[i + 1] = baseG + t * 7 + lift * 6; d[i + 2] = baseB + t * 9 + lift * 8; d[i + 3] = 255;
   }
   cx.putImageData(img, 0, 0);
   ctx.imageSmoothingQuality = 'high'; ctx.drawImage(c, 0, 0, w, h);
   g.strokeWeight(1);
   for (let n = 0; n < w * h / 50; n++) { if (R() < .5) g.stroke(255, 255, 250, 12); else g.stroke(150, 120, 80, 9); g.point(R() * w, R() * h); }
 }
-
 /* ============================================================
-   the meadow — painted like the reference: a green ground of broad, slowly drifting light and dark patches,
-   hatched with thousands of short pale strokes that all lean the same way.
-   it is live (WebGL): gusts roll across and turn the strokes, a finger combs them flat and they spring back.
-   it sprouts inside the opening first, then spreads until the screen is carpeted; soft little flowers open in it.
+   the meadow — 季节版草地
    ============================================================ */
 let gl = null, glc, progG, progH, progB, vaoG, vaoH, vaoB, bufG, bufH, texField, texCells, nGrass = 0, nHeads = 0;
 let S = 1, PD = 1, CELL = 9, GW = 0, GH = 0, FC = 8, FW = 0, FH = 0, FD, FV, FU, fieldLive = 0;
 let cellT, cellDone, queue = [], qi = 0, doneN = 0, lastAct = 0, wipeT = 0;
-const LEAN = -.55, SEG = 4;                                       // strokes lean up and to the right, as in the video
+const LEAN = -.55, SEG = 4;
 const WIND = [Math.cos(LEAN), Math.sin(LEAN)];
-
 const GLSL_COMMON = `
 uniform vec2 uRes; uniform float uTime; uniform vec2 uWind; uniform float uWindStr;
 uniform sampler2D uField; uniform highp sampler2D uCells; uniform vec2 uGrid; uniform float uCell;
+uniform float uSeason;
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
 float cellTime(vec2 p){ ivec2 c = ivec2(clamp(floor(p / uCell), vec2(0.0), uGrid - 1.0)); return texelFetch(uCells, c, 0).r; }
 float gustAt(vec2 p){ vec2 q = p / 220.0 - uWind * uTime * 0.5; float g = vnoise(q) * 0.62 + vnoise(q * 2.1 + 7.3) * 0.38; return smoothstep(0.3, 0.85, g); }
-// how the wind and the finger push a stroke (screen plane), plus the gust value
 vec3 bendAt(vec2 root, float phase){
   float g = gustAt(root);
   vec2 q = root / 220.0 - uWind * uTime * 0.5;
@@ -510,17 +509,38 @@ void main(){
   vec2 F = texture(uField, root / uRes).rg; float f = min(length(F), 1.4);
   float base = ${LEAN.toFixed(3)} + aB.y;
   vec2 dir = normalize(vec2(cos(base), sin(base)) + bg.xy * 1.6);
-  float L = aA.z * gr * (1.0 + 0.7 * f + 0.3 * bg.z * uWindStr);     // combed or wind-blown grass lies longer
+  float L = aA.z * gr * (1.0 + 0.7 * f + 0.3 * bg.z * uWindStr);
   vec2 n = vec2(-dir.y, dir.x);
   float t = aV.x;
   vec2 P = root + dir * L * t + n * (aV.y * aA.w * 0.5 * mix(1.0, 0.3, t) + sin(t * 3.1416) * L * aB.y * 0.25);
   gl_Position = toClip(P);
   int k = int(aB.w + 0.5);
   vec3 c; float a;
-  if (k == 0) { c = vec3(0.94, 0.98, 0.78); a = 0.5; }            // pale highlight strokes
-  else if (k == 1) { c = vec3(0.72, 0.85, 0.36); a = 0.40; }       // light green
-  else { c = vec3(0.20, 0.33, 0.04); a = 0.30; }                   // deep green, for depth
-  float lit = bg.z * uWindStr * 0.6 + f * 0.5;                     // a gust or a finger turns the blades into the light
+
+  vec3 hCol, lCol, dCol;
+  if (uSeason < 0.5) {
+    hCol = vec3(0.96, 0.98, 0.86);
+    lCol = vec3(0.78, 0.90, 0.48);
+    dCol = vec3(0.35, 0.52, 0.12);
+  } else if (uSeason < 1.5) {
+    hCol = vec3(0.94, 0.98, 0.78);
+    lCol = vec3(0.72, 0.85, 0.36);
+    dCol = vec3(0.20, 0.33, 0.04);
+  } else if (uSeason < 2.5) {
+    hCol = vec3(0.98, 0.92, 0.72);
+    lCol = vec3(0.88, 0.72, 0.38);
+    dCol = vec3(0.45, 0.32, 0.10);
+  } else {
+    hCol = vec3(0.98, 0.98, 0.99);
+    lCol = vec3(0.88, 0.90, 0.92);
+    dCol = vec3(0.55, 0.58, 0.62);
+  }
+
+  if (k == 0) { c = hCol; a = 0.5; }
+  else if (k == 1) { c = lCol; a = 0.40; }
+  else { c = dCol; a = 0.30; }
+
+  float lit = bg.z * uWindStr * 0.6 + f * 0.5;
   if (k < 2) a *= 0.8 + lit; else a *= 1.0 - 0.5 * lit;
   c = mix(c, vec3(0.97, 0.99, 0.82), min(1.0, lit * 0.4) * step(float(k), 1.0));
   vCol = c; vA = min(0.85, a) * smoothstep(0.0, 0.3, gr); vT = t; vSide = aV.y;
@@ -541,10 +561,10 @@ void main(){
   vec2 root = aA.xy;
   vec3 bg = bendAt(root, aB.x);
   float q = clamp((uTime - cellTime(root) - 0.6 - aB.x * 0.8) / 0.6, 0.0, 1.0), u = q - 1.0;
-  float r = aA.w * (1.0 + 2.7 * u * u * u + 1.7 * u * u);          // opens after the grass, with a small overshoot
+  float r = aA.w * (1.0 + 2.7 * u * u * u + 1.7 * u * u);
   float rot = aB.y + bg.x * 0.3;
   vec2 off = mat2(cos(rot), sin(rot), -sin(rot), cos(rot)) * aV * r;
-  gl_Position = toClip(root + bg.xy * aA.z + off);                  // nods with the wind and the finger
+  gl_Position = toClip(root + bg.xy * aA.z + off);
   vUv = aV; vType = aB.w;
 }`;
 const FS_HEAD = `#version 300 es
@@ -554,13 +574,35 @@ void main(){
   float r = length(vUv), an = atan(vUv.y, vUv.x);
   int ty = int(vType + 0.5);
   vec3 pc, cc;
-  if (ty == 0) { pc = vec3(1.00, 0.93, 0.62); cc = vec3(1.00, 0.98, 0.86); }        // goose yellow
-  else if (ty == 1) { pc = vec3(0.99, 0.78, 0.82); cc = vec3(1.00, 0.94, 0.72); }   // blush pink
-  else if (ty == 2) { pc = vec3(1.00, 0.98, 0.93); cc = vec3(0.99, 0.87, 0.50); }   // milk white
-  else if (ty == 3) { pc = vec3(0.84, 0.76, 0.97); cc = vec3(1.00, 0.95, 0.76); }   // pale violet
-  else { pc = vec3(0.74, 0.86, 0.99); cc = vec3(1.00, 0.96, 0.80); }                // pale blue
+
+  if (uSeason < 0.5) {
+    if (ty == 0) { pc = vec3(1.00, 0.95, 0.97); cc = vec3(1.00, 0.98, 0.99); }
+    else if (ty == 1) { pc = vec3(0.99, 0.82, 0.86); cc = vec3(1.00, 0.92, 0.88); }
+    else if (ty == 2) { pc = vec3(0.98, 0.96, 0.88); cc = vec3(0.99, 0.92, 0.78); }
+    else if (ty == 3) { pc = vec3(0.88, 0.82, 0.98); cc = vec3(1.00, 0.96, 0.98); }
+    else { pc = vec3(0.82, 0.92, 0.99); cc = vec3(1.00, 0.97, 0.90); }
+  } else if (uSeason < 1.5) {
+    if (ty == 0) { pc = vec3(1.00, 0.93, 0.62); cc = vec3(1.00, 0.98, 0.86); }
+    else if (ty == 1) { pc = vec3(0.99, 0.78, 0.82); cc = vec3(1.00, 0.94, 0.72); }
+    else if (ty == 2) { pc = vec3(1.00, 0.98, 0.93); cc = vec3(0.99, 0.87, 0.50); }
+    else if (ty == 3) { pc = vec3(0.84, 0.76, 0.97); cc = vec3(1.00, 0.95, 0.76); }
+    else { pc = vec3(0.74, 0.86, 0.99); cc = vec3(1.00, 0.96, 0.80); }
+  } else if (uSeason < 2.5) {
+    if (ty == 0) { pc = vec3(1.00, 0.82, 0.42); cc = vec3(1.00, 0.92, 0.72); }
+    else if (ty == 1) { pc = vec3(0.95, 0.65, 0.35); cc = vec3(1.00, 0.82, 0.55); }
+    else if (ty == 2) { pc = vec3(0.90, 0.75, 0.55); cc = vec3(0.98, 0.88, 0.70); }
+    else if (ty == 3) { pc = vec3(0.75, 0.55, 0.35); cc = vec3(0.90, 0.72, 0.52); }
+    else { pc = vec3(0.85, 0.70, 0.45); cc = vec3(0.95, 0.82, 0.60); }
+  } else {
+    if (ty == 0) { pc = vec3(0.95, 0.97, 1.00); cc = vec3(1.00, 1.00, 1.00); }
+    else if (ty == 1) { pc = vec3(0.88, 0.92, 0.98); cc = vec3(0.96, 0.98, 1.00); }
+    else if (ty == 2) { pc = vec3(0.92, 0.94, 0.97); cc = vec3(0.98, 0.99, 1.00); }
+    else if (ty == 3) { pc = vec3(0.85, 0.88, 0.95); cc = vec3(0.94, 0.96, 0.99); }
+    else { pc = vec3(0.90, 0.93, 0.97); cc = vec3(0.97, 0.98, 1.00); }
+  }
+
   float edge = 0.62 + 0.38 * pow(abs(cos(an * 2.5)), 0.8);
-  float a = 1.0 - smoothstep(edge - 0.3, edge + 0.02, r);           // soft, like a dab of paint
+  float a = 1.0 - smoothstep(edge - 0.3, edge + 0.02, r);
   if (a < 0.003) discard;
   vec3 c = mix(cc, pc, smoothstep(0.08, 0.42, r));
   a *= 0.92;
@@ -580,13 +622,27 @@ void main(){
   vec2 g = vP / uCell - 0.5; ivec2 i = ivec2(floor(g)); vec2 f = fract(g);
   float a = mix(mix(cov(i), cov(i + ivec2(1, 0)), f.x), mix(cov(i + ivec2(0, 1)), cov(i + ivec2(1, 1)), f.x), f.y);
   a = smoothstep(0.15, 0.85, a + (vnoise(vP * 0.08) - 0.5) * 0.3);
-  // broad soft patches of light and shade that drift very slowly, like the video
   float n = vnoise(vP / 260.0 + vec2(uTime * 0.012, uTime * 0.008)) * 0.65 + vnoise(vP / 90.0 - uTime * 0.01) * 0.35;
-  vec3 c = mix(vec3(0.33, 0.49, 0.05), vec3(0.62, 0.80, 0.12), smoothstep(0.2, 0.75, n));
+
+  vec3 darkGround, lightGround;
+  if (uSeason < 0.5) {
+    darkGround = vec3(0.45, 0.65, 0.25);
+    lightGround = vec3(0.72, 0.88, 0.42);
+  } else if (uSeason < 1.5) {
+    darkGround = vec3(0.33, 0.49, 0.05);
+    lightGround = vec3(0.62, 0.80, 0.12);
+  } else if (uSeason < 2.5) {
+    darkGround = vec3(0.55, 0.42, 0.15);
+    lightGround = vec3(0.85, 0.68, 0.32);
+  } else {
+    darkGround = vec3(0.75, 0.78, 0.82);
+    lightGround = vec3(0.92, 0.94, 0.96);
+  }
+
+  vec3 c = mix(darkGround, lightGround, smoothstep(0.2, 0.75, n));
   c += vec3(0.05, 0.05, 0.0) * gustAt(vP) * uWindStr;
   o = vec4(c * a, a);
 }`;
-
 function compile(vs, fs) {
   const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s)); return s; };
@@ -598,7 +654,7 @@ function compile(vs, fs) {
 }
 function initGL() {
   glc = document.createElement('canvas');
-  gl = glc.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, preserveDrawingBuffer: false });   // copied out right after rendering, in the same frame
+  gl = glc.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, preserveDrawingBuffer: false });
   if (!gl) { console.warn('WebGL2 unavailable — no grass'); return; }
   progG = compile(VS_GRASS, FS_GRASS); progH = compile(VS_HEAD, FS_HEAD); progB = compile(VS_GROUND, FS_GROUND);
   const strip = []; for (let i = 0; i <= SEG; i++) strip.push(i / SEG, -1, i / SEG, 1);
@@ -619,7 +675,6 @@ function initGL() {
   vaoG = vao(gBlade, bufG); vaoH = vao(gQuad, bufH); vaoB = vao(gTri, null);
   texField = gl.createTexture(); texCells = gl.createTexture();
 }
-// lay out every blade and flower once; they stay invisible (height 0) until their cell's time comes
 function buildMeadow() {
   S = Math.min(W, H) / 430; PD = Math.min(2, pixelDensity());
   CELL = Math.max(8, Math.round(9 * S));
@@ -628,8 +683,9 @@ function buildMeadow() {
   FD = new Float32Array(FW * FH * 2); FV = new Float32Array(FW * FH * 2); FU = new Float32Array(FW * FH * 2);
   if (!gl) return;
   glc.width = Math.round(W * PD); glc.height = Math.round(H * PD);
-  // strokes: [x, y, length, width | phase, angle jitter, -, kind]
-  const nG = Math.min(160000, Math.round(W * H / 14)), nF = Math.round(W * H / 4200);
+
+  const flowerDensity = season === 3 ? 15000 : season === 2 ? 8000 : 4200;
+  const nG = Math.min(160000, Math.round(W * H / 14)), nF = Math.round(W * H / flowerDensity);
   const G = new Float32Array(nG * 8), F = new Float32Array(nF * 8);
   for (let k = 0; k < nG; k++) {
     const x = rr(-6, W + 6), y = rr(-6, H + 10), q = R();
@@ -639,7 +695,7 @@ function buildMeadow() {
   let f = 0;
   for (let tries = 0; f < nF && tries < nF * 40; tries++) {
     const x = R() * W, y = R() * H;
-    const p = smooth((noise(x * .004 + 99, y * .004, 700) - .42) * 4);   // flowers gather in loose drifts
+    const p = smooth((noise(x * .004 + 99, y * .004, 700) - .42) * 4);
     if (R() > p * .9 + .03) continue;
     const tn = noise(x * .003 + 50, y * .003, 1500), type = R() < .3 ? Math.floor(R() * 5) : Math.max(0, Math.min(4, Math.floor(tn * 6.5 - 1)));
     F.set([x, y, 5 * S, (4.6 + 2.4 * R()) * S, R(), R() * TWO_PI, 0, type], f * 8); f++;
@@ -666,8 +722,6 @@ function resetGrass() {
   FD.fill(0); FV.fill(0); fieldLive = 1;
   uploadCells();
 }
-// when a tear is finished, every cell learns when its grass arrives:
-// cells inside the opening go first (fast, running along the tear), then the green spreads outward
 function seedGrass(c, T) {
   const P = c.pts, L = Math.max(1, c.len), Wmax = Math.min(30, 6 + c.len * .055);
   const g0 = T + .45, SPEED = Math.hypot(W, H) / 3.4;
@@ -692,12 +746,11 @@ function grassAt(x, y, T, settle = .6) {
   if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) return false;
   return T - cellT[gy * GW + gx] > settle;
 }
-
-/* ---- the touch field: where a finger has pressed the grass down, as a small grid of springs ---- */
+/* ---- the touch field ---- */
 function brush(x0, y0, x1, y1, str) {
   const Rr = 44 * S, dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy, len = Math.sqrt(l2);
   let mx = 0, my = 0;
-  if (len > .5) { mx = dx / len; my = dy / len; }   // screen motion → ground direction
+  if (len > .5) { mx = dx / len; my = dy / len; }
   const gx0 = Math.max(0, Math.floor((Math.min(x0, x1) - Rr) / FC)), gx1 = Math.min(FW - 1, Math.ceil((Math.max(x0, x1) + Rr) / FC));
   const gy0 = Math.max(0, Math.floor((Math.min(y0, y1) - Rr) / FC)), gy1 = Math.min(FH - 1, Math.ceil((Math.max(y0, y1) + Rr) / FC));
   for (let gy = gy0; gy <= gy1; gy++) for (let gx = gx0; gx <= gx1; gx++) {
@@ -712,7 +765,6 @@ function brush(x0, y0, x1, y1, str) {
   }
   fieldLive = 1;
 }
-// pressed grass rises back on its own: an under-damped spring, so it overshoots a little before it settles
 function stepField(dt) {
   if (!fieldLive) return;
   const K = 13, C = 3.4; let e = 0;
@@ -728,7 +780,7 @@ function renderGrass(T) {
   gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texField);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texCells);
-  const windStr = .75 + .5 * noise(T * .09, 4000);              // calm spells and stronger spells
+  const windStr = .75 + .5 * noise(T * .09, 4000);
   const set = p => {
     gl.useProgram(p); const u = p.u;
     gl.uniform2f(u.uRes, W, H); gl.uniform1f(u.uTime, T);
@@ -736,6 +788,7 @@ function renderGrass(T) {
     if (u.uWindStr) gl.uniform1f(u.uWindStr, windStr);
     if (u.uField) gl.uniform1i(u.uField, 0);
     gl.uniform1i(u.uCells, 1); gl.uniform2f(u.uGrid, GW, GH); gl.uniform1f(u.uCell, CELL);
+    if (u.uSeason) gl.uniform1f(u.uSeason, season);
   };
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   set(progB); gl.bindVertexArray(vaoB); gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -753,10 +806,8 @@ function drawLawn(T) {
   const ctx = drawingContext;
   ctx.save(); ctx.globalAlpha = wipeT ? 1 - smooth((T - wipeT) / 1.1) : 1; ctx.drawImage(glc, 0, 0, W, H); ctx.restore();
 }
-
 /* ============================================================
-   the cloth: not black — a deep green-grey fabric, hanging in long soft folds,
-   with a fine nap; painted once, then a slow sheen moves across it
+   the cloth: 季节适配布料色彩
    ============================================================ */
 function paintVelvet(g) {
   const k = 3, sw = Math.ceil(W / k), sh = Math.ceil(H / k), Hm = new Float32Array(sw * sh);
@@ -764,27 +815,31 @@ function paintVelvet(g) {
   const ca = Math.cos(.32), sa = Math.sin(.32);
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     const X = x * k, Y = y * k, u = X * ca + Y * sa, v = -X * sa + Y * ca;
-    Hm[y * sw + x] = noise(u * .0042, v * .0009) + noise(u * .011, v * .0024, 7) * .28;   // folds run long, one way
+    Hm[y * sw + x] = noise(u * .0042, v * .0009) + noise(u * .011, v * .0024, 7) * .28;
   }
   const c = document.createElement('canvas'); c.width = sw; c.height = sh;
   const cx = c.getContext('2d'), img = cx.createImageData(sw, sh), d = img.data;
+
+  let rBase, gBase, bBase;
+  if (season === 0) { rBase = 25; gBase = 32; bBase = 28; }
+  else if (season === 1) { rBase = 15; gBase = 20; bBase = 19; }
+  else if (season === 2) { rBase = 30; gBase = 25; bBase = 20; }
+  else { rBase = 20; gBase = 24; bBase = 30; }
+
   for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
     const i = y * sw + x, hx = Hm[i + (x < sw - 1 ? 1 : 0)] - Hm[i - (x > 0 ? 1 : 0)], hy = Hm[i + (y < sh - 1 ? sw : 0)] - Hm[i - (y > 0 ? sw : 0)];
-    const shade = Math.max(-1, Math.min(1, (hx * .8 - hy * .6) * 14));                      // light from the upper right
+    const shade = Math.max(-1, Math.min(1, (hx * .8 - hy * .6) * 14));
     const vx = x / sw - .5, vy = y / sh - .45, vig = 1 - Math.min(1, (vx * vx + vy * vy) * 1.5);
     const L = (.55 + .45 * vig) * (1 + shade * .55) * (.85 + Hm[i] * .3);
-    d[i * 4] = 15 * L; d[i * 4 + 1] = 20 * L; d[i * 4 + 2] = 19 * L; d[i * 4 + 3] = 255;
+    d[i * 4] = rBase * L; d[i * 4 + 1] = gBase * L; d[i * 4 + 2] = bBase * L; d[i * 4 + 3] = 255;
   }
   cx.putImageData(img, 0, 0);
   const ctx = g.drawingContext; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(c, 0, 0, W, H);
-  // the nap: fine, faint grain
   g.strokeWeight(1);
   for (let n = 0; n < W * H / 40; n++) { g.stroke(R() < .5 ? 255 : 0, R() < .5 ? 6 : 10); g.point(R() * W, R() * H); }
 }
-
 /* ============================================================
-   the tear — like dark cloth stretched until it splits:
-   a hairline of light first, a held breath, then it gives and eases open
+   the tear
    ============================================================ */
 const STEP = 4;
 function newCrack(x, y, t) {
@@ -802,26 +857,26 @@ function extend(c, x, y, t) {
   if (d < STEP) return;
   const ux = dx / d, uy = dy / d, nx = -uy, ny = ux, n = Math.floor(d / STEP);
   for (let k = 1; k <= n; k++) {
-    c.dv = c.dv * .9 + gauss() * .18; c.drift = c.drift * .97 + c.dv;    // cloth tears in smooth, slightly wandering lines
+    c.dv = c.dv * .9 + gauss() * .18; c.drift = c.drift * .97 + c.dv;
     addPoint(c, p.x + ux * STEP * k + nx * c.drift, p.y + uy * STEP * k + ny * c.drift, t);
     const q = c.pts[c.pts.length - 1];
-    if (R() < .18) spawnLater(q.x, q.y, nx, ny, t + rr(.35, .9));      // they can't wait: out as soon as the cloth gives
+    if (R() < .18) spawnLater(q.x, q.y, nx, ny, t + rr(.35, .9));
   }
 }
 function widthAt(c, i, T) {
   const p = c.pts[i], age = T - p.t;
   if (age <= 0) return -1;
-  let w = .5;                                                            // a hairline of light, held for a breath
+  let w = .5;
   const a = age - .25;
   if (a > 0) {
-    const e = Math.max(0, 1 - Math.exp(-1.9 * a) * Math.cos(2.6 * a));  // then it gives: eases open, overshoots a little, settles
+    const e = Math.max(0, 1 - Math.exp(-1.9 * a) * Math.cos(2.6 * a));
     const Wmax = Math.min(30, 6 + c.len * .055);
     const u = Math.min(1, Math.max(0, p.s / Math.max(1, c.len)));
-    w = Math.max(w, Wmax * Math.pow(Math.sin(Math.PI * u), .8) * e);    // lens-shaped: widest in the middle
-    w *= 1 + .045 * Math.sin(T * 1.15 + c.ph[0]) * Math.min(1, a);      // and breathes while it stays open
+    w = Math.max(w, Wmax * Math.pow(Math.sin(Math.PI * u), .8) * e);
+    w *= 1 + .045 * Math.sin(T * 1.15 + c.ph[0]) * Math.min(1, a);
   }
   if (healT) w *= 1 - smooth((T - healT) / 1.1);
-  if (c.endT && !c.keep) w *= 1 - smooth((T - c.endT - 2.9) / 1.1);    // closes slowly, gone 4 s after the finger lifts (unless grass took it)
+  if (c.endT && !c.keep) w *= 1 - smooth((T - c.endT - 2.9) / 1.1);
   return w;
 }
 function geometry(T) {
@@ -845,13 +900,14 @@ function geometry(T) {
   }
   return out;
 }
-
 /* ============================================================
-   butterflies — side view after the reference, wings raised, yellow and glowing
+   butterflies — 季节适配色彩与数量
    ============================================================ */
-function spawnLater(x, y, nx, ny, at) { if (pending.length + flies.length < 360) pending.push({ x, y, nx, ny, at }); }
+function spawnLater(x, y, nx, ny, at) {
+  const maxFlies = season === 3 ? 60 : season === 2 ? 180 : 360;
+  if (pending.length + flies.length < maxFlies) pending.push({ x, y, nx, ny, at });
+}
 function spawnFly(x, y, nx, ny) {
-  // bursting out: a fast first dash away from the crack, before the usual erratic flight takes over
   const side = R() < .5 ? 1 : -1, sp = rr(220, 340), up = rr(90, 160);
   const f = { x, y, vx: nx * side * sp, vy: ny * side * sp - up, ph: R() * TWO_PI, fs: rr(20, 26),
               size: rr(13, 21), life: rr(1.8, 2.4), age: 0, wn: R() * 100, face: 1, cruise: sp, head: Math.atan2(ny * side * sp - up, nx * side * sp), next: rr(.18, .35) };
@@ -860,35 +916,74 @@ function spawnFly(x, y, nx, ny) {
 function wings(s, f, a) {
   push(); scale(s, s * f); noStroke();
   const g = drawingContext.createLinearGradient(0, 0, .5, -1.5);
-  g.addColorStop(0, `rgba(255,249,204,${a})`); g.addColorStop(.5, `rgba(255,243,170,${a})`); g.addColorStop(1, `rgba(253,236,150,${a})`);   // all goose-yellow
+
+  let c1, c2, c3;
+  if (season === 0) {
+    c1 = `rgba(255,245,250,${a})`;
+    c2 = `rgba(255,230,240,${a})`;
+    c3 = `rgba(255,220,230,${a})`;
+  } else if (season === 1) {
+    c1 = `rgba(255,249,204,${a})`;
+    c2 = `rgba(255,243,170,${a})`;
+    c3 = `rgba(253,236,150,${a})`;
+  } else if (season === 2) {
+    c1 = `rgba(255,200,140,${a})`;
+    c2 = `rgba(255,170,100,${a})`;
+    c3 = `rgba(230,140,70,${a})`;
+  } else {
+    c1 = `rgba(240,245,255,${a})`;
+    c2 = `rgba(220,230,250,${a})`;
+    c3 = `rgba(200,215,240,${a})`;
+  }
+
+  g.addColorStop(0, c1); g.addColorStop(.5, c2); g.addColorStop(1, c3);
   drawingContext.fillStyle = g;
   beginShape(); vertex(-.16, 0); vertex(-.34, -.78); quadraticVertex(-.43, -1.36, -.31, -1.58); quadraticVertex(.2, -1.02, .64, -.46); quadraticVertex(.36, -.14, .16, 0); endShape(CLOSE);
   beginShape(); vertex(.04, -.04); quadraticVertex(.34, -.78, .86, -.97); quadraticVertex(1.26, -.98, 1.2, -.62); vertex(1.3, -.47); quadraticVertex(1.06, -.1, .46, .03); endShape(CLOSE);
   pop();
 }
 function drawFly(f) {
-  const k = f.age < .2 ? f.age / .2 : f.age > f.life - .8 ? Math.max(0, (f.life - f.age) / .8) : 1;   // fades out over its last moment
+  const k = f.age < .2 ? f.age / .2 : f.age > f.life - .8 ? Math.max(0, (f.life - f.age) / .8) : 1;
   const lum = k;
   const c = Math.cos(f.ph), up = c > 0 ? c : c * .4, s = f.size;
   if (Math.abs(f.vx) > 6) f.face += ((f.vx > 0 ? -1 : 1) - f.face) * .08;
   const fl = f.face < 0 ? -1 : 1, ctx = drawingContext;
   push(); translate(f.x, f.y);
-  // a faint glow: a small soft halo of the same goose-yellow, breathing a little with the wingbeat
+
+  let glowCol, wingShadow, wingStroke;
+  if (season === 0) {
+    glowCol = `rgba(255,230,240,${.22 * lum})`;
+    wingShadow = `rgba(255,220,235,${.7 * lum})`;
+    wingStroke = `rgba(255, 210, 225, ${255 * lum})`;
+  } else if (season === 1) {
+    glowCol = `rgba(255,244,170,${.22 * lum})`;
+    wingShadow = `rgba(255,240,160,${.7 * lum})`;
+    wingStroke = `rgba(250, 234, 150, ${255 * lum})`;
+  } else if (season === 2) {
+    glowCol = `rgba(255,180,100,${.22 * lum})`;
+    wingShadow = `rgba(255,160,90,${.7 * lum})`;
+    wingStroke = `rgba(230, 150, 80, ${255 * lum})`;
+  } else {
+    glowCol = `rgba(220,235,255,${.22 * lum})`;
+    wingShadow = `rgba(210,225,245,${.7 * lum})`;
+    wingStroke = `rgba(200, 220, 240, ${255 * lum})`;
+  }
+
   blendMode(SCREEN); noStroke();
   const hr = s * (1.6 + .15 * up);
   const gr = ctx.createRadialGradient(0, -s * .45, 0, 0, -s * .45, hr);
-  gr.addColorStop(0, `rgba(255,244,170,${.22 * lum})`); gr.addColorStop(1, 'rgba(255,244,170,0)');
+  gr.addColorStop(0, glowCol); gr.addColorStop(1, 'rgba(255,244,170,0)');
   ctx.fillStyle = gr; ctx.fillRect(-hr, -s * .45 - hr, hr * 2, hr * 2);
   blendMode(BLEND);
+
   scale(fl, 1); rotate(constrain(f.vy / 140, -.5, .5) * fl - .12);
-  ctx.shadowColor = `rgba(255,240,160,${.7 * lum})`;
+  ctx.shadowColor = wingShadow;
   ctx.shadowBlur = 5; wings(s, Math.max(-.4, up * .92), .8 * lum);
-  ctx.shadowBlur = 2; stroke(250, 234, 150, 255 * lum); strokeWeight(Math.max(1, s * .1)); line(-.55 * s, .02 * s, .62 * s, .06 * s);
+  ctx.shadowBlur = 2; stroke(wingStroke); strokeWeight(Math.max(1, s * .1)); line(-.55 * s, .02 * s, .62 * s, .06 * s);
   ctx.shadowBlur = 6; wings(s, up, lum);
   pop();
   ctx.shadowBlur = 0;
 }
-
 /* ============================================================
    input
    ============================================================ */
@@ -896,10 +991,9 @@ const hint = document.getElementById('hint'), heal = document.getElementById('he
 const ptr = { x: .5, y: .5, sx: .5, sy: .5, cx: 0, cy: 0, lx: -1, ly: -1 };
 let pressing = false, brushMode = false;
 addEventListener('pointerdown', e => {
-  if (e.target instanceof Node && heal.contains(e.target)) return;     // the glass wraps the label in its own layers, so the target may be a child
+  if (e.target instanceof Node && heal.contains(e.target)) return;
   pressing = true; ptr.cx = ptr.lx = e.clientX; ptr.cy = ptr.ly = e.clientY;
   hint.classList.add('gone'); heal.classList.add('on');
-  // where the grass has already grown, a finger brushes it instead of tearing the cloth
   brushMode = grassAt(e.clientX, e.clientY, now());
   if (brushMode) return;
   healT = 0; pressT = now(); cur = newCrack(e.clientX, e.clientY, now());
@@ -907,7 +1001,6 @@ addEventListener('pointerdown', e => {
 addEventListener("pointermove", e => {
   ptr.cx = e.clientX; ptr.cy = e.clientY; ptr.x = e.clientX / innerWidth; ptr.y = e.clientY / innerHeight;
   if (cur) extend(cur, e.clientX, e.clientY, now());
-  // the grass bends wherever the finger passes (a mouse hovering bends it gently too)
   if (ptr.lx >= 0 && (pressing || e.pointerType === 'mouse')) brush(ptr.lx, ptr.ly, e.clientX, e.clientY, pressing ? 1 : .45);
   ptr.lx = e.clientX; ptr.ly = e.clientY;
 });
@@ -923,9 +1016,20 @@ const end = () => {
 addEventListener('pointerup', end); addEventListener('pointercancel', end);
 heal.addEventListener('click', () => { healT = now(); wipeT = now(); setTimeout(() => { cracks.length = 0; healT = 0; resetGrass(); heal.classList.remove('on'); hint.classList.remove('gone'); }, 1300); });
 
-/* ---- music: starts on the first touch, fading in ----
-   tried on several events because iOS only counts touchend/click as a gesture that may start audio;
-   capture phase, so the cards' stopPropagation can't swallow it */
+// 季节切换快捷键
+addEventListener('keydown', e => {
+  if (e.key === '1') { season = 0; rebuildSeason(); }
+  if (e.key === '2') { season = 1; rebuildSeason(); }
+  if (e.key === '3') { season = 2; rebuildSeason(); }
+  if (e.key === '4') { season = 3; rebuildSeason(); }
+});
+function rebuildSeason() {
+  paintScene(scene);
+  paintVelvet(velvet);
+  buildMeadow();
+}
+
+/* ---- music ---- */
 const bgm = document.getElementById('bgm'), BGM_EVENTS = ['pointerdown', 'touchend', 'click', 'keydown'];
 function startBgm() {
   if (!bgm.paused) return;
@@ -937,11 +1041,7 @@ function startBgm() {
   }).catch(() => {});
 }
 BGM_EVENTS.forEach(t => addEventListener(t, startBgm, true));
-
-/* ---- phones: lighter glass ----
-   each glass follows the pointer: on every move all of them re-measure and repaint, and the backdrop filters re-run —
-   measured on an emulated phone that halves the frame rate while a finger moves. a finger can't hover, so the lean
-   is barely visible on touch: drop it there. the big cards also skip the rim refraction (SVG displacement passes) */
+/* ---- phones ---- */
 const COARSE = matchMedia('(pointer: coarse)').matches;
 let curFps = 60;
 if (COARSE) addEventListener('DOMContentLoaded', () =>
@@ -950,19 +1050,16 @@ if (COARSE) addEventListener('DOMContentLoaded', () =>
     removeEventListener('pointermove', g._onMove);
     if (el.matches('div.mo-card')) g.set({ refraction: 0 });
   }));
-
 /* ---- the meadow cards ---- */
 const moCardsBox = document.getElementById('mo-cards');
 const moCards = [...document.querySelectorAll('.mo-card')];
 let profileShown = false;
-// touching a card must not tear the cloth or comb the grass
 moCardsBox.addEventListener('pointerdown', e => e.stopPropagation());
 function showCards(on) {
   nav.classList.toggle('on', on); nav.setAttribute('aria-hidden', String(!on));
   if (on) setPage(0, 1);
   else if (page >= 0) { leavePage(pages[page], 1); page = -1; }
 }
-
 /* ---- pages: one glass at a time ---- */
 const pages = [...document.querySelectorAll('.mo-page')];
 pages.slice(0, -1).forEach(p => p.insertAdjacentHTML('beforeend', '<div class="mo-more" aria-hidden="true">下滑 继续</div>'));
@@ -971,13 +1068,12 @@ const navBtns = [...nav.querySelectorAll('button')], navInk = nav.querySelector(
 let page = -1, flipT = 0;
 const cardsOf = p => [...p.querySelectorAll('.mo-card')];
 const atTop = p => p.scrollTop <= 1, atBottom = p => p.scrollTop + p.clientHeight >= p.scrollHeight - 1;
-
 function setPage(i, dir) {
   if (i < 0 || i >= pages.length || i === page) return;
   const prev = page; page = i; flipT = performance.now();
   dir = dir ?? Math.sign(i - prev);
   if (prev >= 0) leavePage(pages[prev], dir);
-  enterPage(pages[i], dir, prev < 0 ? 0 : .32);    // the old glass is mostly gone before the new one arrives
+  enterPage(pages[i], dir, prev < 0 ? 0 : .32);
   navBtns.forEach((b, k) => k === i ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
   moveInk();
 }
@@ -987,10 +1083,11 @@ function leavePage(p, dir) {
     el.style.transitionDelay = '0s'; el.classList.toggle('up', dir > 0); el.classList.remove('show');
     el.setAttribute('aria-hidden', 'true'); if (el.tagName === 'A') el.tabIndex = -1;
   });
-  rvEls.forEach(el => { if (p.contains(el)) { el.style.setProperty('--d', '0s'); el.classList.remove('in'); } });}
+  rvEls.forEach(el => { if (p.contains(el)) { el.style.setProperty('--d', '0s'); el.classList.remove('in'); } });
+}
 function enterPage(p, dir, delay) {
   p.classList.add('on');
-  p.scrollTop = dir < 0 ? p.scrollHeight : 0;      // coming back up lands at the bottom of the previous page
+  p.scrollTop = dir < 0 ? p.scrollHeight : 0;
   const cs = cardsOf(p);
   cs.forEach((el, k) => {
     el.style.transition = 'none'; el.classList.toggle('up', dir < 0); el.offsetHeight; el.style.transition = '';
@@ -998,7 +1095,6 @@ function enterPage(p, dir, delay) {
     el.style.transitionDelay = (delay + k * .08).toFixed(2) + 's';
     el.classList.add('show'); el.setAttribute('aria-hidden', 'false'); if (el.tagName === 'A') el.tabIndex = 0;
   });
-  // the delay only for the entrance; afterwards the glass should lean toward the pointer without lag
   clearTimeout(enterPage.t); enterPage.t = setTimeout(() => cs.forEach(el => el.style.transitionDelay = ''), 1600);
   requestAnimationFrame(() => revealIn(rvEls.filter(el => p.contains(el) && rvSeen.has(el)), delay + .25));
 }
@@ -1010,8 +1106,7 @@ function moveInk() {
 addEventListener('resize', moveInk);
 navBtns.forEach((b, k) => b.addEventListener('click', () => setPage(k)));
 nav.addEventListener('pointerdown', e => e.stopPropagation());
-
-// swipe: only from the edge of a page — at its bottom a swipe up goes on, at its top a swipe down goes back
+// swipe
 let sw = null;
 addEventListener('touchstart', e => {
   sw = null;
@@ -1024,7 +1119,7 @@ addEventListener('touchmove', e => {
   const t = e.touches[0]; sw.dx = t.clientX - sw.x; sw.dy = t.clientY - sw.y;
   const edge = (sw.dy < 0 && sw.bot) || (sw.dy > 0 && sw.top);
   const pull = edge && Math.abs(sw.dy) > Math.abs(sw.dx) ? Math.sign(sw.dy) * Math.min(70, Math.abs(sw.dy) * .3) : 0;
-  sw.p.style.transition = 'none'; sw.p.style.transform = pull ? `translateY(${pull}px)` : '';    // a little rubber band
+  sw.p.style.transition = 'none'; sw.p.style.transform = pull ? `translateY(${pull}px)` : '';
 }, { passive: true });
 const swEnd = () => {
   if (!sw) return;
@@ -1037,8 +1132,7 @@ const swEnd = () => {
   else if (dy > 0 && atTop(p)) setPage(page - 1, -1);
 };
 addEventListener('touchend', swEnd); addEventListener('touchcancel', () => { if (sw) { sw.dy = 0; swEnd(); } });
-
-// mouse wheel / trackpad: the same rule, one page per gesture
+// mouse wheel / trackpad
 let wg = null, wLast = 0;
 addEventListener('wheel', e => {
   if (!profileShown || page < 0) return;
@@ -1050,7 +1144,6 @@ addEventListener('wheel', e => {
   if (wg.acc > 50 && wg.bot) { wg.dead = true; setPage(page + 1, 1); }
   else if (wg.acc < -50 && wg.top) { wg.dead = true; setPage(page - 1, -1); }
 }, { passive: true });
-
 /* ---- content reveal ---- */
 const rvEls = [...document.querySelectorAll(
   '.mop-inner > :not(.mop-tags), .mop-tags > *, .ab-sec > :not(.ab-tl), .ab-tl-i, .ab-gate')];
@@ -1068,10 +1161,7 @@ const rvIO = new IntersectionObserver(entries => {
 }, { rootMargin: '0px 0px -6% 0px' });
 rvEls.forEach(el => rvIO.observe(el));
 moCards.forEach(el => { if (el.tagName === 'A') el.tabIndex = -1; });
-
-
 const wander = t => Math.sin(t * 1.3) * .6 + Math.sin(t * .47 + 1.7) * .4;
-
 /* ============================================================
    draw
    ============================================================ */
@@ -1079,101 +1169,136 @@ function draw() {
   const T = now(), dt = Math.min(.05, deltaTime / 1000);
   ptr.sx += (ptr.x - ptr.sx) * dt * 2; ptr.sy += (ptr.y - ptr.sy) * dt * 2;
 
-  // once the grass has carpeted everything, the cloth and paper underneath can't be seen: skip them
   const covered = doneN === GW * GH && T - lastAct > 1 && !wipeT;
-  // on phones, while the glass pages are up, every frame of grass also re-renders the glass over it: 30 fps is plenty there
   const fps = covered && COARSE ? 30 : 60;
   if (fps !== curFps) { curFps = fps; frameRate(fps); }
+
   if (covered !== profileShown) { profileShown = covered; showCards(covered); }
+
   updateGrass(T, dt);
-  if (pressing && brushMode) brush(ptr.cx, ptr.cy, ptr.cx, ptr.cy, .12);   // a finger held still keeps the grass parted around it
+
+  if (pressing && brushMode) brush(ptr.cx, ptr.cy, ptr.cx, ptr.cy, .12);
+
   for (let i = cracks.length - 1; i >= 0; i--) if (cracks[i].endT && !cracks[i].keep && T - cracks[i].endT > 4) cracks.splice(i, 1);
   if (!cracks.length && !cur && heal.classList.contains('on')) heal.classList.remove('on');
+
   const G = geometry(T);
   const ctx = drawingContext;
   let gr;
 
   if (!covered) {
-  // the paper behind drifts with the finger and slowly breathes nearer and farther; a soft warm light rests on it
-  const ox = PAD + (ptr.sx - .5) * PAD * 1.2 + Math.sin(T * .1) * PAD * .25, oy = PAD + (ptr.sy - .5) * PAD * .9 + Math.cos(T * .08) * PAD * .2;
-  const wc = world.drawingContext, zx = W * .5, zy = H * .35, z = 1.012 + .012 * Math.sin(T * .32);
-  wc.save(); wc.translate(zx, zy); wc.scale(z, z); wc.translate(-zx, -zy);
-  wc.drawImage(scene.elt, -ox, -oy, scene.width, scene.height);
-  wc.restore();
-  const D = Math.hypot(W, H);
-  gr = wc.createRadialGradient(zx, H * .3, 0, zx, H * .3, D * .55);
-  gr.addColorStop(0, `rgba(255,253,245,${.22 + .08 * Math.sin(T * .55)})`); gr.addColorStop(1, 'rgba(255,253,245,0)');
-  wc.fillStyle = gr; wc.fillRect(0, 0, W, H);
-  image(world, 0, 0);
+    const ox = PAD + (ptr.sx - .5) * PAD * 1.2 + Math.sin(T * .1) * PAD * .25, oy = PAD + (ptr.sy - .5) * PAD * .9 + Math.cos(T * .08) * PAD * .2;
+    const wc = world.drawingContext, zx = W * .5, zy = H * .35, z = 1.012 + .012 * Math.sin(T * .32);
+    wc.save(); wc.translate(zx, zy); wc.scale(z, z); wc.translate(-zx, -zy);
+    wc.drawImage(scene.elt, -ox, -oy, scene.width, scene.height);
+    wc.restore();
 
-  // the cloth, a slow sheen sliding across its folds, with the tear cut out of it
-  const xc = dark.drawingContext;
-  dark.clear(); dark.image(velvet, 0, 0);
-  xc.save(); xc.globalCompositeOperation = 'screen';
-  const sp = ((T * .025) % 1.6 - .3), sx0 = W * sp, sy0 = H * (sp - .2);
-  gr = xc.createLinearGradient(sx0 - W * .35, sy0 - H * .1, sx0 + W * .35, sy0 + H * .1);
-  gr.addColorStop(0, 'rgba(70,90,82,0)'); gr.addColorStop(.5, 'rgba(70,90,82,.06)'); gr.addColorStop(1, 'rgba(70,90,82,0)');
-  xc.fillStyle = gr; xc.fillRect(0, 0, W, H);
-  xc.fillStyle = `rgba(40,52,48,${.03 + .02 * Math.sin(T * .7)})`; xc.fillRect(0, 0, W, H);   // the whole cloth breathes, barely
-  xc.restore();
-  dark.erase(); dark.noStroke();
-  for (const g of G) if (g.open) { dark.beginShape(); for (const p of g.poly) dark.vertex(p[0], p[1]); dark.endShape(CLOSE); }
-  dark.noErase();
-  // depth: the paper sits a little way behind the cloth, so it falls into shade just inside the opening
-  xc.save();
-  for (const g of G) if (g.open && g.seam.some(p => p.w > 2)) {
-    const path = new Path2D(); g.poly.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath();
-    const hole = new Path2D(); hole.rect(-50, -50, W + 100, H + 100); hole.addPath(path);
-    xc.save(); xc.clip(path);
-    xc.shadowColor = 'rgba(0,0,0,.55)'; xc.shadowBlur = 9 * pixelDensity(); xc.fillStyle = '#000'; xc.fill(hole, 'evenodd');
+    const D = Math.hypot(W, H);
+    let lightR, lightG, lightB, lightA;
+    if (season === 0) { lightR = 255; lightG = 245; lightB = 250; lightA = .22 + .08 * Math.sin(T * .55); }
+    else if (season === 1) { lightR = 255; lightG = 253; lightB = 245; lightA = .22 + .08 * Math.sin(T * .55); }
+    else if (season === 2) { lightR = 255; lightG = 240; lightB = 220; lightA = .22 + .08 * Math.sin(T * .55); }
+    else { lightR = 240; lightG = 245; lightB = 255; lightA = .18 + .06 * Math.sin(T * .55); }
+
+    gr = wc.createRadialGradient(zx, H * .3, 0, zx, H * .3, D * .55);
+    gr.addColorStop(0, `rgba(${lightR},${lightG},${lightB},${lightA})`);
+    gr.addColorStop(1, `rgba(${lightR},${lightG},${lightB},0)`);
+    wc.fillStyle = gr; wc.fillRect(0, 0, W, H);
+
+    image(world, 0, 0);
+
+    const xc = dark.drawingContext;
+    dark.clear(); dark.image(velvet, 0, 0);
+    xc.save(); xc.globalCompositeOperation = 'screen';
+
+    const sp = ((T * .025) % 1.6 - .3), sx0 = W * sp, sy0 = H * (sp - .2);
+    let sheenCol;
+    if (season === 0) sheenCol = 'rgba(100,120,100,';
+    else if (season === 1) sheenCol = 'rgba(70,90,82,';
+    else if (season === 2) sheenCol = 'rgba(110,90,70,';
+    else sheenCol = 'rgba(80,90,110,';
+
+    gr = xc.createLinearGradient(sx0 - W * .35, sy0 - H * .1, sx0 + W * .35, sy0 + H * .1);
+    gr.addColorStop(0, sheenCol + '0)');
+    gr.addColorStop(.5, sheenCol + '.06)');
+    gr.addColorStop(1, sheenCol + '0)');
+    xc.fillStyle = gr; xc.fillRect(0, 0, W, H);
+
+    let breathCol;
+    if (season === 0) breathCol = 'rgba(50,62,55,';
+    else if (season === 1) breathCol = 'rgba(40,52,48,';
+    else if (season === 2) breathCol = 'rgba(60,50,40,';
+    else breathCol = 'rgba(45,50,60,';
+    xc.fillStyle = breathCol + (.03 + .02 * Math.sin(T * .7)) + ')';
+    xc.fillRect(0, 0, W, H);
     xc.restore();
-  }
-  xc.restore();
-  image(dark, 0, 0);
 
-  // anticipation: while the finger presses, light faintly shows through the thin cloth beneath it
-  if (cur) {
-    const k = smooth((T - pressT) / .5) * .1;
-    ctx.save(); ctx.globalCompositeOperation = 'screen';
-    gr = ctx.createRadialGradient(ptr.cx, ptr.cy, 0, ptr.cx, ptr.cy, 110);
-    gr.addColorStop(0, `rgba(240,232,210,${k})`); gr.addColorStop(1, 'rgba(240,232,210,0)');
-    ctx.fillStyle = gr; ctx.fillRect(ptr.cx - 110, ptr.cy - 110, 220, 220); ctx.restore();
+    dark.erase(); dark.noStroke();
+    for (const g of G) if (g.open) { dark.beginShape(); for (const p of g.poly) dark.vertex(p[0], p[1]); dark.endShape(CLOSE); }
+    dark.noErase();
+
+    xc.save();
+    for (const g of G) if (g.open && g.seam.some(p => p.w > 2)) {
+      const path = new Path2D(); g.poly.forEach(([x, y], i) => i ? path.lineTo(x, y) : path.moveTo(x, y)); path.closePath();
+      const hole = new Path2D(); hole.rect(-50, -50, W + 100, H + 100); hole.addPath(path);
+      xc.save(); xc.clip(path);
+      xc.shadowColor = 'rgba(0,0,0,.55)'; xc.shadowBlur = 9 * pixelDensity(); xc.fillStyle = '#000'; xc.fill(hole, 'evenodd');
+      xc.restore();
+    }
+    xc.restore();
+
+    image(dark, 0, 0);
+
+    if (cur) {
+      const k = smooth((T - pressT) / .5) * .1;
+      ctx.save(); ctx.globalCompositeOperation = 'screen';
+      let pressR, pressG, pressB;
+      if (season === 0) { pressR = 250; pressG = 235; pressB = 240; }
+      else if (season === 1) { pressR = 240; pressG = 232; pressB = 210; }
+      else if (season === 2) { pressR = 245; pressG = 225; pressB = 200; }
+      else { pressR = 230; pressG = 235; pressB = 245; }
+
+      gr = ctx.createRadialGradient(ptr.cx, ptr.cy, 0, ptr.cx, ptr.cy, 110);
+      gr.addColorStop(0, `rgba(${pressR},${pressG},${pressB},${k})`);
+      gr.addColorStop(1, `rgba(${pressR},${pressG},${pressB},0)`);
+      ctx.fillStyle = gr; ctx.fillRect(ptr.cx - 110, ptr.cy - 110, 220, 220); ctx.restore();
+    }
+
+    const sc = spill.getContext('2d'), anyOpen = G.some(g => g.open);
+    if (anyOpen) {
+      sc.setTransform(1, 0, 0, 1, 0, 0); sc.globalCompositeOperation = 'source-over'; sc.clearRect(0, 0, spill.width, spill.height);
+      sc.setTransform(1 / SPILL, 0, 0, 1 / SPILL, 0, 0);
+      sc.shadowColor = 'rgba(255,255,255,.9)'; sc.shadowBlur = 12; sc.fillStyle = '#fff';
+      for (let pass = 0; pass < 2; pass++) for (const g of G) if (g.open) { sc.beginPath(); g.poly.forEach(([x, y], i) => i ? sc.lineTo(x, y) : sc.moveTo(x, y)); sc.closePath(); sc.fill(); }
+      sc.shadowBlur = 0; sc.globalCompositeOperation = 'source-in';
+      sc.drawImage(world.elt, 0, 0, W, H);
+      spillLevel = Math.min(1, spillLevel + dt * 3);
+    } else spillLevel = Math.max(0, spillLevel - dt / 1.2);
+
+    if (spillLevel > 0) {
+      let burst = 0;
+      for (const c of cracks) if (c.openT) { const s = T - c.openT; burst = Math.max(burst, .35 * Math.exp(-s * 1.4) * (1 - Math.exp(-s * 8))); }
+      ctx.save(); ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = Math.min(1, spillLevel * (.4 + .08 * Math.sin(T * 1.15)) + burst);
+      ctx.drawImage(spill, 0, 0, spill.width * SPILL, spill.height * SPILL); ctx.restore();
+    }
+  } else {
+    if (season === 0) background(110, 150, 60);
+    else if (season === 1) background(70, 112, 20);
+    else if (season === 2) background(140, 110, 50);
+    else background(190, 195, 205);
   }
 
-  // light spill: the paper behind leaks onto the cloth around the opening, in its own colour;
-  // it swells as the cloth gives way, breathes while open, and lingers a moment after it closes
-  const sc = spill.getContext('2d'), anyOpen = G.some(g => g.open);
-  if (anyOpen) {
-    sc.setTransform(1, 0, 0, 1, 0, 0); sc.globalCompositeOperation = 'source-over'; sc.clearRect(0, 0, spill.width, spill.height);
-    sc.setTransform(1 / SPILL, 0, 0, 1 / SPILL, 0, 0);
-    sc.shadowColor = 'rgba(255,255,255,.9)'; sc.shadowBlur = 12; sc.fillStyle = '#fff';
-    for (let pass = 0; pass < 2; pass++) for (const g of G) if (g.open) { sc.beginPath(); g.poly.forEach(([x, y], i) => i ? sc.lineTo(x, y) : sc.moveTo(x, y)); sc.closePath(); sc.fill(); }
-    sc.shadowBlur = 0; sc.globalCompositeOperation = 'source-in';
-    sc.drawImage(world.elt, 0, 0, W, H);                                 // tint the glow with what is behind it
-    spillLevel = Math.min(1, spillLevel + dt * 3);
-  } else spillLevel = Math.max(0, spillLevel - dt / 1.2);
-  if (spillLevel > 0) {
-    let burst = 0;
-    for (const c of cracks) if (c.openT) { const s = T - c.openT; burst = Math.max(burst, .35 * Math.exp(-s * 1.4) * (1 - Math.exp(-s * 8))); }
-    ctx.save(); ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = Math.min(1, spillLevel * (.4 + .08 * Math.sin(T * 1.15)) + burst);
-    ctx.drawImage(spill, 0, 0, spill.width * SPILL, spill.height * SPILL); ctx.restore();
-  }
-  } else background(70, 112, 20);
-
-  // the grass, over everything except the butterflies
   if (doneN) drawLawn(T);
 
   for (let i = pending.length - 1; i >= 0; i--) if (T >= pending[i].at) { const p = pending[i]; pending.splice(i, 1); if (!healT) spawnFly(p.x, p.y, p.nx, p.ny); }
 
-  // butterflies
   for (let i = flies.length - 1; i >= 0; i--) {
     const f = flies[i]; f.age += dt;
     if (f.age > f.life) { flies.splice(i, 1); continue; }
-    // erratic: every few tenths of a second it lurches off in a new direction
     if (f.age > f.next) { f.head += rr(-2.2, 2.2); f.cruise = rr(140, 230); f.next = f.age + rr(.12, .35); }
     f.vx += (Math.cos(f.head) * f.cruise - f.vx) * Math.min(1, dt * 7); f.vy += (Math.sin(f.head) * f.cruise - f.vy) * Math.min(1, dt * 7);
-    f.x += f.vx * dt; f.y += f.vy * dt + Math.cos(f.ph) * f.size * .9 * dt * f.fs * .1; f.ph += dt * f.fs;   // each wingbeat lifts it a little
+    f.x += f.vx * dt; f.y += f.vy * dt + Math.cos(f.ph) * f.size * .9 * dt * f.fs * .1; f.ph += dt * f.fs;
     drawFly(f);
   }
 }
